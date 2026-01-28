@@ -1,123 +1,13 @@
+
 import { GoogleGenAI, Type } from "@google/genai";
-import { LessonPlan, ActivitySheet, Subject, ClassLevel, ActivityType, ActivityQuestion, Source, GradeLevel } from '../types';
-
-// --- GERENCIAMENTO DE ESTADO DA IA ---
-
-let aiInstance: GoogleGenAI | null = null;
-let isInitialized = false;
-
-// Função segura para obter o cliente IA
-const getAiClient = (): GoogleGenAI | null => {
-  if (isInitialized) return aiInstance;
-
-  try {
-    // process.env.API_KEY é substituído pelo Vite em tempo de build
-    const rawApiKey = process.env.API_KEY;
-    
-    const isValid = 
-      typeof rawApiKey === 'string' && 
-      rawApiKey.trim().length > 0 && 
-      rawApiKey !== 'undefined' &&
-      !rawApiKey.includes('YOUR_API_KEY');
-
-    if (isValid) {
-      aiInstance = new GoogleGenAI({ apiKey: rawApiKey });
-      console.log('✅ EduBrinca: IA conectada com sucesso.');
-    } else {
-      console.warn('⚠️ EduBrinca: Modo Offline (Sem API Key configurada).');
-    }
-  } catch (error) {
-    console.error('❌ Erro fatal ao inicializar IA:', error);
-    aiInstance = null;
-  } finally {
-    isInitialized = true;
-  }
-
-  return aiInstance;
-};
+import { LessonPlan, ActivitySheet, Subject, ClassLevel, ActivityType, GradeLevel, Source } from '../types';
+import { LOCAL_OBJECTIVES, LOCAL_STEPS_TEMPLATES, getLocalActivityQuestions } from './localData';
+import { saveToDB } from './db';
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// Helper para extrair fontes
-const extractSources = (response: any): Source[] => {
-  if (!response?.candidates?.[0]?.groundingMetadata?.groundingChunks) return [];
-  const chunks = response.candidates[0].groundingMetadata.groundingChunks;
-  return chunks
-    .filter((c: any) => c.web)
-    .map((c: any) => ({
-      uri: c.web.uri,
-      title: c.web.title || c.web.uri
-    }));
-};
-
-// Diretrizes pedagógicas
-const getGradeGuidelines = (grade: GradeLevel) => {
-  switch (grade) {
-    case '2º Ano':
-      return "Diretrizes 2º ANO: Frases curtas, vocabulário simples, apoio visual implícito. Foco em alfabetização.";
-    case '3º Ano':
-      return "Diretrizes 3º ANO: Frases médias, estimule autonomia. Introduza pequenos desafios de lógica.";
-    case '4º Ano':
-      return "Diretrizes 4º ANO: Textos estruturados, interpretação de texto e problemas matemáticos em etapas.";
-    default:
-      return "";
-  }
-};
-
-// --- MOCK GENERATORS (Modo Offline) ---
-// Estes geradores são usados sempre que a IA falha ou não tem chave
-const getMockLessonPlan = (subject: Subject, theme: string, duration: number, level: ClassLevel, gradeLevel: GradeLevel, objective?: string): LessonPlan => {
-  return {
-    id: generateId(),
-    createdAt: Date.now(),
-    subject,
-    theme,
-    duration,
-    level,
-    gradeLevel,
-    objective: objective || `Introduzir o tema ${theme} (Modo Offline - IA indisponível)`,
-    materials: ["Quadro e giz/pincel", "Caderno do aluno", "Lápis de cor", "Material impresso"],
-    steps: [
-      { time: "10 min", title: "Acolhida", description: "Roda de conversa inicial para levantar os conhecimentos prévios dos alunos sobre o tema." },
-      { time: "20 min", title: "Desenvolvimento", description: `Explicação lúdica sobre ${theme}, utilizando exemplos concretos da realidade da turma.` },
-      { time: "15 min", title: "Prática", description: "Atividade de fixação para consolidar o aprendizado." },
-      { time: "5 min", title: "Encerramento", description: "Feedback coletivo e organização da sala." }
-    ],
-    differentiation: {
-      remedial: "Oferecer apoio próximo e material concreto.",
-      advanced: "Propor que expliquem o conteúdo para um colega."
-    },
-    sources: []
-  };
-};
-
-const getMockActivity = (subject: Subject, theme: string, type: ActivityType, count: number, level: ClassLevel, gradeLevel: GradeLevel): ActivitySheet => {
-  const questions: ActivityQuestion[] = [];
-  
-  for(let i=0; i<count; i++) {
-    questions.push({
-        id: generateId(),
-        instruction: `Questão ${i+1} sobre ${theme}`,
-        content: `Esta é uma questão de exemplo gerada no modo offline.\nPara ter questões personalizadas pela IA, configure uma API Key válida.\n\n(   ) Opção A\n(   ) Opção B`,
-        answer: "Gabarito indisponível no modo offline"
-    });
-  }
-
-  return {
-    id: generateId(),
-    createdAt: Date.now(),
-    subject,
-    theme,
-    type,
-    level,
-    gradeLevel,
-    schoolHeader: { studentName: true, date: true, teacherName: true },
-    questions,
-    sources: []
-  };
-};
-
-// --- FUNÇÕES EXPORTADAS ---
+// Inicialização segura do Gemini
+const getAI = () => new GoogleGenAI({ apiKey: process.env.API_KEY });
 
 export const generateLessonPlan = async (
   subject: Subject,
@@ -127,79 +17,97 @@ export const generateLessonPlan = async (
   gradeLevel: GradeLevel,
   customObjective?: string
 ): Promise<LessonPlan> => {
+  
+  if (navigator.onLine) {
+    try {
+      const ai = getAI();
+      const prompt = `Atue como uma coordenadora pedagógica experiente. 
+      Crie um plano de aula detalhado para alunos do ${gradeLevel} sobre o tema "${theme}" na disciplina de ${subject}.
+      O nível da turma é: ${level}.
+      ${customObjective ? `O objetivo principal deve ser: ${customObjective}` : ''}
+      O plano deve ser criativo, lúdico e adequado à idade.`;
 
-  const ai = getAiClient();
-
-  // Se não tem IA, retorna template imediatamente
-  if (!ai) {
-    await new Promise(r => setTimeout(r, 800)); // Delay para UX
-    return getMockLessonPlan(subject, theme, duration, level, gradeLevel, customObjective);
-  }
-
-  const gradeRules = getGradeGuidelines(gradeLevel);
-  const prompt = `Crie um Planejamento de Aula JSON para ${gradeLevel}.
-  Tema: ${theme}. Disciplina: ${subject}. Duração: ${duration}min.
-  ${gradeRules}
-  Retorne APENAS JSON válido.`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: "Você é uma professora especialista.",
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            objective: { type: Type.STRING },
-            materials: { type: Type.ARRAY, items: { type: Type.STRING } },
-            steps: {
-              type: Type.ARRAY,
-              items: {
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          tools: [{ googleSearch: {} }],
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              objective: { type: Type.STRING, description: "Objetivo pedagógico claro" },
+              materials: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de materiais necessários" },
+              steps: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    time: { type: Type.STRING, description: "Tempo estimado (ex: 10 min)" },
+                    title: { type: Type.STRING, description: "Título da etapa" },
+                    description: { type: Type.STRING, description: "Explicação detalhada da atividade" },
+                  },
+                  required: ["time", "title", "description"]
+                }
+              },
+              differentiation: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING },
-                  title: { type: Type.STRING },
-                  description: { type: Type.STRING }
-                }
+                  remedial: { type: Type.STRING, description: "Dica para alunos com dificuldade" },
+                  advanced: { type: Type.STRING, description: "Desafio para alunos avançados" },
+                },
+                required: ["remedial", "advanced"]
               }
             },
-            differentiation: {
-              type: Type.OBJECT,
-              properties: { remedial: { type: Type.STRING }, advanced: { type: Type.STRING } }
-            }
+            required: ["objective", "materials", "steps", "differentiation"]
           }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(response.text || "{}");
-    
-    // Validação básica do retorno da IA
-    if (!data.steps || data.steps.length === 0) throw new Error("Resposta IA incompleta");
+      const data = JSON.parse(response.text || "{}");
+      const sources: Source[] = response.candidates?.[0]?.groundingMetadata?.groundingChunks
+        ?.filter(chunk => chunk.web)
+        ?.map(chunk => ({ uri: chunk.web!.uri, title: chunk.web!.title || "Fonte Consultada" })) || [];
 
-    return {
-      id: generateId(),
-      createdAt: Date.now(),
-      subject,
-      theme,
-      duration,
-      level,
-      gradeLevel,
-      objective: data.objective || `Aula sobre ${theme}`,
-      materials: data.materials || [],
-      steps: data.steps || [],
-      differentiation: data.differentiation || { remedial: "-", advanced: "-" },
-      sources: extractSources(response)
-    };
+      const plan: LessonPlan = {
+        id: generateId(),
+        createdAt: Date.now(),
+        subject, theme, duration, level, gradeLevel,
+        objective: data.objective,
+        materials: data.materials,
+        steps: data.steps,
+        differentiation: data.differentiation,
+        sources: sources
+      };
 
-  } catch (error) {
-    console.error("Falha na geração via IA:", error);
-    // Fallback silencioso para template
-    return getMockLessonPlan(subject, theme, duration, level, gradeLevel, customObjective);
+      await saveToDB('plans', plan);
+      return plan;
+    } catch (e) {
+      console.error("Erro na geração com Gemini:", e);
+    }
   }
+
+  // Fallback Offline se a API falhar ou estiver sem internet
+  const randomObjective = LOCAL_OBJECTIVES[subject][Math.floor(Math.random() * LOCAL_OBJECTIVES[subject].length)];
+  const plan: LessonPlan = {
+    id: generateId(),
+    createdAt: Date.now(),
+    subject, theme, duration, level, gradeLevel,
+    objective: customObjective || `${randomObjective} (Foco: ${theme})`,
+    materials: ['Caderno', 'Lápis', 'Quadro', 'Recursos do professor'],
+    steps: LOCAL_STEPS_TEMPLATES.map(s => ({
+      ...s,
+      description: s.description.replace('[TEMA]', theme)
+    })),
+    differentiation: {
+      remedial: "Apoio visual e repetição de comandos.",
+      advanced: "Desafio de criação autônoma sobre o tema."
+    },
+    sources: []
+  };
+
+  await saveToDB('plans', plan);
+  return plan;
 };
 
 export const generateActivity = async (
@@ -211,66 +119,69 @@ export const generateActivity = async (
   gradeLevel: GradeLevel
 ): Promise<ActivitySheet> => {
 
-  const ai = getAiClient();
+  if (navigator.onLine) {
+    try {
+      const ai = getAI();
+      const prompt = `Crie uma folha de atividades escolar para o ${gradeLevel}.
+      Disciplina: ${subject}. Tema: ${theme}. Tipo de exercício: ${type}.
+      Nível de dificuldade: ${level}. Gere exatamente ${count} questões.
+      Formate o conteúdo das questões com linhas pontilhadas (______) onde o aluno deve escrever.
+      Se for 'Ligue', use formatos como 'A) Item --- 1) Definição'.`;
 
-  if (!ai) {
-    await new Promise(r => setTimeout(r, 800));
-    return getMockActivity(subject, theme, type, count, level, gradeLevel);
-  }
-
-  const gradeRules = getGradeGuidelines(gradeLevel);
-  const prompt = `Crie Atividade Escolar JSON para ${gradeLevel}.
-  Tema: ${theme}. Tipo: ${type}. Qtd: ${count}.
-  ${gradeRules}
-  Retorne APENAS JSON válido.`;
-
-  try {
-    const response = await ai.models.generateContent({
-      model: 'gemini-3-flash-preview',
-      contents: prompt,
-      config: {
-        systemInstruction: "Você é uma professora criativa.",
-        tools: [{ googleSearch: {} }],
-        responseMimeType: "application/json",
-        responseSchema: {
-          type: Type.OBJECT,
-          properties: {
-            questions: {
-              type: Type.ARRAY,
-              items: {
-                type: Type.OBJECT,
-                properties: {
-                  instruction: { type: Type.STRING },
-                  content: { type: Type.STRING },
-                  answer: { type: Type.STRING }
+      const response = await ai.models.generateContent({
+        model: "gemini-3-flash-preview",
+        contents: prompt,
+        config: {
+          responseMimeType: "application/json",
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              questions: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    instruction: { type: Type.STRING, description: "O comando da questão (ex: Ligue os pontos)" },
+                    content: { type: Type.STRING, description: "O corpo da questão ou os itens" },
+                    answer: { type: Type.STRING, description: "Gabarito para o professor" },
+                  },
+                  required: ["instruction", "content", "answer"]
                 }
               }
-            }
+            },
+            required: ["questions"]
           }
         }
-      }
-    });
+      });
 
-    const data = JSON.parse(response.text || "{}");
-    const questions = (data.questions || []).map((q: any) => ({ ...q, id: generateId() }));
+      const data = JSON.parse(response.text || "{}");
+      
+      const activity: ActivitySheet = {
+        id: generateId(),
+        createdAt: Date.now(),
+        subject, theme, type, level, gradeLevel,
+        schoolHeader: { studentName: true, date: true, teacherName: true },
+        questions: data.questions.map((q: any) => ({ ...q, id: generateId() })),
+        sources: []
+      };
 
-    if (questions.length === 0) throw new Error("Nenhuma questão gerada");
-
-    return {
-      id: generateId(),
-      createdAt: Date.now(),
-      subject,
-      theme,
-      type,
-      level,
-      gradeLevel,
-      schoolHeader: { studentName: true, date: true, teacherName: true },
-      questions,
-      sources: extractSources(response)
-    };
-
-  } catch (error) {
-    console.error("Falha na geração via IA:", error);
-    return getMockActivity(subject, theme, type, count, level, gradeLevel);
+      await saveToDB('activities', activity);
+      return activity;
+    } catch (e) {
+      console.error("Erro na geração de atividade com Gemini:", e);
+    }
   }
+
+  // Fallback Offline
+  const activity: ActivitySheet = {
+    id: generateId(),
+    createdAt: Date.now(),
+    subject, theme, type, level, gradeLevel,
+    schoolHeader: { studentName: true, date: true, teacherName: true },
+    questions: getLocalActivityQuestions(theme, type, count).map(q => ({ ...q, id: generateId() })),
+    sources: []
+  };
+
+  await saveToDB('activities', activity);
+  return activity;
 };
