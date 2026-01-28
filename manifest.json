@@ -1,0 +1,18 @@
+{
+  "name": "EduBrinca - Planejamento Escolar",
+  "short_name": "EduBrinca",
+  "description": "Assistente de planejamento e atividades para professoras do 2º ano.",
+  "start_url": "./index.html",
+  "display": "standalone",
+  "background_color": "#FFFDF7",
+  "theme_color": "#FFFDF7",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "type": "image/svg+xml",
+      "sizes": "192x192 512x512",
+      "purpose": "any maskable"
+    }
+  ]
+}

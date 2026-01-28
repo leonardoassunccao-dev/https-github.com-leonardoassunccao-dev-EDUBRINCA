@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    
+    <!-- Configuração PWA -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#FFFDF7">
+    <meta name="mobile-web-app-capable" content="yes">
+    
+    <!-- iOS Support -->
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+    <meta name="apple-mobile-web-app-title" content="EduBrinca">
+    <link rel="apple-touch-icon" href="icon.svg">
+
+    <title>EduBrinca</title>
+    
+    <!-- Tailwind via CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            screens: {
+              'xs': '375px', // Breakpoint extra para celulares muito pequenos
+            },
+            colors: {
+              paper: '#FFFDF7',
+              pencil: '#3F3D56',
+              lines: '#CBD5E1', // Cinza azulado suave para linhas
+              brand: {
+                orange: '#FF8E72',
+                yellow: '#FFD966',
+                blue: '#60A5FA',
+                green: '#86EFAC',
+                purple: '#C084FC',
+                pink: '#F472B6'
+              }
+            },
+            fontFamily: {
+              sans: ['Nunito', 'sans-serif'], // Texto corrido legível e redondo
+              display: ['Fredoka', 'cursive'], // Títulos fofos
+            },
+            boxShadow: {
+              'neopop': '4px 4px 0px 0px rgba(63, 61, 86, 0.1)',
+              'button': '0px 4px 0px 0px',
+              'sheet': '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05)'
+            }
+          }
+        }
+      }
+    </script>
+    <!-- Importando Fredoka (Títulos) e Nunito (Corpo) -->
+    <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    <style>
+      /* Reset Global */
+      *, *::before, *::after {
+        box-sizing: border-box;
+        -webkit-tap-highlight-color: transparent; /* Remove highlight azul no toque mobile */
+      }
+
+      html, body {
+        overflow-x: hidden; /* Previne rolagem horizontal indesejada no app */
+        width: 100%;
+      }
+
+      body {
+        font-family: 'Nunito', sans-serif;
+        background-color: #FFFDF7;
+        color: #3F3D56;
+        background-image: radial-gradient(#E5E7EB 2px, transparent 2px);
+        background-size: 32px 32px;
+        margin: 0;
+        padding: 0;
+        -webkit-font-smoothing: antialiased;
+        padding-top: env(safe-area-inset-top);
+        padding-bottom: env(safe-area-inset-bottom);
+      }
+      
+      h1, h2, h3, .font-display {
+        font-family: 'Fredoka', cursive;
+      }
+      
+      /* Scrollbar suave para containers internos */
+      .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+      .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+      .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 20px; }
+
+      /* --- REGRAS GERAIS DE IMPRESSÃO --- */
+      @media print {
+        @page {
+          size: A4 portrait;
+          margin: 0;
+        }
+
+        body {
+          background: white !important;
+          background-image: none !important;
+          -webkit-print-color-adjust: exact !important;
+          print-color-adjust: exact !important;
+          color: #1a1a1a !important;
+          height: auto !important;
+          overflow: visible !important;
+        }
+
+        .no-print, header, button, .shadow-neopop, .shadow-sheet, footer, .pwa-install-btn {
+          display: none !important;
+        }
+
+        #root, main, .page-layout {
+          width: 100% !important;
+          margin: 0 !important;
+          padding: 0 !important;
+          max-width: none !important;
+          display: block !important;
+        }
+
+        /* Área de Impressão Global */
+        .print-area {
+          display: block !important;
+          width: 210mm !important; /* Largura exata A4 */
+          max-width: 210mm !important;
+          background: white !important;
+          box-shadow: none !important;
+          border: none !important;
+          border-radius: 0 !important;
+          margin: 0 auto !important;
+          box-sizing: border-box !important;
+          transform: none !important; /* Remove qualquer escala visual do mobile */
+        }
+        
+        .avoid-break { 
+          page-break-inside: avoid !important; 
+          break-inside: avoid !important;
+        }
+
+        /* --- MODO MULTI-PÁGINA (Aulas/Planejamentos) --- */
+        body.print-multipage .print-area {
+          padding: 1.5cm !important;
+          font-size: 12pt !important;
+        }
+        
+        body.print-multipage h1 { font-size: 24pt !important; }
+        body.print-multipage h2 { font-size: 20pt !important; }
+        body.print-multipage p, body.print-multipage li { 
+          line-height: 1.6 !important; 
+        }
+
+        /* --- MODO 1 FOLHA (Exercícios/Avaliações) --- */
+        body.print-onepage .print-area {
+          padding: 1cm !important;
+          min-height: 297mm !important; /* Altura A4 */
+          height: auto !important;
+          font-size: 11pt !important;
+        }
+
+        body.print-onepage .school-header {
+          margin-bottom: 0.5cm !important;
+          padding: 0.4cm !important;
+          border-width: 1px !important;
+        }
+        
+        body.print-onepage .activity-title {
+          font-size: 22pt !important;
+          margin-bottom: 0.2cm !important;
+        }
+        
+        body.print-onepage .activity-meta {
+          margin-bottom: 0.5cm !important;
+          font-size: 9pt !important;
+        }
+
+        body.print-onepage .question-container {
+          margin-bottom: 0.6cm !important;
+        }
+        
+        body.print-onepage .question-text {
+          font-size: 11pt !important;
+          margin-bottom: 0.3cm !important;
+        }
+
+        body.print-onepage .drawing-box {
+          height: 4cm !important;
+          margin-top: 0.3cm !important;
+        }
+        
+        body.print-onepage .writing-line {
+          height: 0.8cm !important;
+        }
+        
+        body.print-onepage .footer-message {
+          padding-top: 0.5cm !important;
+        }
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react": "https://esm.sh/react@^19.2.4",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.4/",
+    "react/": "https://esm.sh/react@^19.2.4/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.38.0",
+    "vite": "https://esm.sh/vite@^7.3.1",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^5.1.2"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root" allowfullscreen></div>
+    <script type="module" src="/index.tsx"></script>
+  </body>
+</html>

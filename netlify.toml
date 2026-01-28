@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# Redirecionamento essencial para React (SPA)
+# Isso impede o erro 404 ao recarregar a página
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
