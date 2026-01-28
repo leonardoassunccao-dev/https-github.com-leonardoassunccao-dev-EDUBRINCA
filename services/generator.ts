@@ -1,14 +1,47 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { LessonPlan, ActivitySheet, Subject, ClassLevel, ActivityType, ActivityQuestion, Source, GradeLevel } from '../types';
 
-// Inicialização do cliente Google GenAI
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY || '' });
+// --- GERENCIAMENTO DE ESTADO DA IA ---
+
+let aiInstance: GoogleGenAI | null = null;
+let isInitialized = false;
+
+// Função segura para obter o cliente IA
+const getAiClient = (): GoogleGenAI | null => {
+  if (isInitialized) return aiInstance;
+
+  try {
+    // process.env.API_KEY é substituído pelo Vite em tempo de build
+    const rawApiKey = process.env.API_KEY;
+    
+    const isValid = 
+      typeof rawApiKey === 'string' && 
+      rawApiKey.trim().length > 0 && 
+      rawApiKey !== 'undefined' &&
+      !rawApiKey.includes('YOUR_API_KEY');
+
+    if (isValid) {
+      aiInstance = new GoogleGenAI({ apiKey: rawApiKey });
+      console.log('✅ EduBrinca: IA conectada com sucesso.');
+    } else {
+      console.warn('⚠️ EduBrinca: Modo Offline (Sem API Key configurada).');
+    }
+  } catch (error) {
+    console.error('❌ Erro fatal ao inicializar IA:', error);
+    aiInstance = null;
+  } finally {
+    isInitialized = true;
+  }
+
+  return aiInstance;
+};
 
 const generateId = () => Math.random().toString(36).substring(2, 15);
 
-// Helper para extrair fontes do Search Grounding
+// Helper para extrair fontes
 const extractSources = (response: any): Source[] => {
-  const chunks = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
+  if (!response?.candidates?.[0]?.groundingMetadata?.groundingChunks) return [];
+  const chunks = response.candidates[0].groundingMetadata.groundingChunks;
   return chunks
     .filter((c: any) => c.web)
     .map((c: any) => ({
@@ -17,19 +50,74 @@ const extractSources = (response: any): Source[] => {
     }));
 };
 
-// Diretrizes pedagógicas por ano
+// Diretrizes pedagógicas
 const getGradeGuidelines = (grade: GradeLevel) => {
   switch (grade) {
     case '2º Ano':
-      return "Diretrizes 2º ANO: Frases curtas, vocabulário simples, apoio visual implícito na escrita. Linguagem muito acolhedora e lúdica. Foco em alfabetização e consolidação.";
+      return "Diretrizes 2º ANO: Frases curtas, vocabulário simples, apoio visual implícito. Foco em alfabetização.";
     case '3º Ano':
-      return "Diretrizes 3º ANO: Frases de tamanho médio, estimule a autonomia da criança. Menos repetição, introduza pequenos desafios de lógica. Foco em fluência.";
+      return "Diretrizes 3º ANO: Frases médias, estimule autonomia. Introduza pequenos desafios de lógica.";
     case '4º Ano':
-      return "Diretrizes 4º ANO: Textos mais completos e parágrafos estruturados. Exija interpretação de texto e problemas matemáticos com mais passos. Linguagem menos infantilizada, mais acadêmica, mas ainda amigável.";
+      return "Diretrizes 4º ANO: Textos estruturados, interpretação de texto e problemas matemáticos em etapas.";
     default:
       return "";
   }
 };
+
+// --- MOCK GENERATORS (Modo Offline) ---
+// Estes geradores são usados sempre que a IA falha ou não tem chave
+const getMockLessonPlan = (subject: Subject, theme: string, duration: number, level: ClassLevel, gradeLevel: GradeLevel, objective?: string): LessonPlan => {
+  return {
+    id: generateId(),
+    createdAt: Date.now(),
+    subject,
+    theme,
+    duration,
+    level,
+    gradeLevel,
+    objective: objective || `Introduzir o tema ${theme} (Modo Offline - IA indisponível)`,
+    materials: ["Quadro e giz/pincel", "Caderno do aluno", "Lápis de cor", "Material impresso"],
+    steps: [
+      { time: "10 min", title: "Acolhida", description: "Roda de conversa inicial para levantar os conhecimentos prévios dos alunos sobre o tema." },
+      { time: "20 min", title: "Desenvolvimento", description: `Explicação lúdica sobre ${theme}, utilizando exemplos concretos da realidade da turma.` },
+      { time: "15 min", title: "Prática", description: "Atividade de fixação para consolidar o aprendizado." },
+      { time: "5 min", title: "Encerramento", description: "Feedback coletivo e organização da sala." }
+    ],
+    differentiation: {
+      remedial: "Oferecer apoio próximo e material concreto.",
+      advanced: "Propor que expliquem o conteúdo para um colega."
+    },
+    sources: []
+  };
+};
+
+const getMockActivity = (subject: Subject, theme: string, type: ActivityType, count: number, level: ClassLevel, gradeLevel: GradeLevel): ActivitySheet => {
+  const questions: ActivityQuestion[] = [];
+  
+  for(let i=0; i<count; i++) {
+    questions.push({
+        id: generateId(),
+        instruction: `Questão ${i+1} sobre ${theme}`,
+        content: `Esta é uma questão de exemplo gerada no modo offline.\nPara ter questões personalizadas pela IA, configure uma API Key válida.\n\n(   ) Opção A\n(   ) Opção B`,
+        answer: "Gabarito indisponível no modo offline"
+    });
+  }
+
+  return {
+    id: generateId(),
+    createdAt: Date.now(),
+    subject,
+    theme,
+    type,
+    level,
+    gradeLevel,
+    schoolHeader: { studentName: true, date: true, teacherName: true },
+    questions,
+    sources: []
+  };
+};
+
+// --- FUNÇÕES EXPORTADAS ---
 
 export const generateLessonPlan = async (
   subject: Subject,
@@ -40,63 +128,57 @@ export const generateLessonPlan = async (
   customObjective?: string
 ): Promise<LessonPlan> => {
 
+  const ai = getAiClient();
+
+  // Se não tem IA, retorna template imediatamente
+  if (!ai) {
+    await new Promise(r => setTimeout(r, 800)); // Delay para UX
+    return getMockLessonPlan(subject, theme, duration, level, gradeLevel, customObjective);
+  }
+
   const gradeRules = getGradeGuidelines(gradeLevel);
-
-  const systemInstruction = `Você é uma professora especialista do Ensino Fundamental I.
-  Crie um planejamento de aula criativo e adequado para o ${gradeLevel}.
+  const prompt = `Crie um Planejamento de Aula JSON para ${gradeLevel}.
+  Tema: ${theme}. Disciplina: ${subject}. Duração: ${duration}min.
   ${gradeRules}
-  Use o Google Search para trazer curiosidades reais, dados atualizados ou fatos interessantes sobre o tema.`;
-
-  const prompt = `Crie um Planejamento de Aula estruturado em JSON.
-  Ano da Turma: ${gradeLevel}
-  Disciplina: ${subject}
-  Tema: ${theme}
-  Duração: ${duration} minutos
-  Nível da Turma (Diferenciação): ${level}
-  Objetivo Específico: ${customObjective || `Alinhado à BNCC para o ${gradeLevel}`}
-
-  Certifique-se de que a complexidade e a linguagem estejam perfeitamente ajustadas para crianças do ${gradeLevel}.`;
+  Retorne APENAS JSON válido.`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        systemInstruction,
+        systemInstruction: "Você é uma professora especialista.",
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
           type: Type.OBJECT,
           properties: {
-            objective: { type: Type.STRING, description: "Objetivo principal da aula em 1 frase clara." },
-            materials: { type: Type.ARRAY, items: { type: Type.STRING }, description: "Lista de materiais necessários." },
+            objective: { type: Type.STRING },
+            materials: { type: Type.ARRAY, items: { type: Type.STRING } },
             steps: {
               type: Type.ARRAY,
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  time: { type: Type.STRING, description: "Duração estimada do passo (ex: '10 min')." },
-                  title: { type: Type.STRING, description: "Título da etapa." },
-                  description: { type: Type.STRING, description: "Descrição detalhada do que fazer, adequada ao ano escolar." }
-                },
-                required: ["time", "title", "description"]
+                  time: { type: Type.STRING },
+                  title: { type: Type.STRING },
+                  description: { type: Type.STRING }
+                }
               }
             },
             differentiation: {
               type: Type.OBJECT,
-              properties: {
-                remedial: { type: Type.STRING, description: "Estratégia para alunos de Reforço." },
-                advanced: { type: Type.STRING, description: "Estratégia para alunos Avançados/Regular." }
-              },
-              required: ["remedial", "advanced"]
+              properties: { remedial: { type: Type.STRING }, advanced: { type: Type.STRING } }
             }
-          },
-          required: ["objective", "materials", "steps", "differentiation"]
+          }
         }
       }
     });
 
     const data = JSON.parse(response.text || "{}");
+    
+    // Validação básica do retorno da IA
+    if (!data.steps || data.steps.length === 0) throw new Error("Resposta IA incompleta");
 
     return {
       id: generateId(),
@@ -109,24 +191,14 @@ export const generateLessonPlan = async (
       objective: data.objective || `Aula sobre ${theme}`,
       materials: data.materials || [],
       steps: data.steps || [],
-      differentiation: data.differentiation || { remedial: "Apoio individualizado.", advanced: "Desafio extra." },
+      differentiation: data.differentiation || { remedial: "-", advanced: "-" },
       sources: extractSources(response)
     };
+
   } catch (error) {
-    console.error("Erro ao gerar planejamento:", error);
-    return {
-      id: generateId(),
-      createdAt: Date.now(),
-      subject,
-      theme,
-      duration,
-      level,
-      gradeLevel,
-      objective: "Erro ao gerar planejamento. Tente novamente.",
-      materials: [],
-      steps: [],
-      differentiation: { remedial: "", advanced: "" }
-    };
+    console.error("Falha na geração via IA:", error);
+    // Fallback silencioso para template
+    return getMockLessonPlan(subject, theme, duration, level, gradeLevel, customObjective);
   }
 };
 
@@ -139,40 +211,25 @@ export const generateActivity = async (
   gradeLevel: GradeLevel
 ): Promise<ActivitySheet> => {
 
+  const ai = getAiClient();
+
+  if (!ai) {
+    await new Promise(r => setTimeout(r, 800));
+    return getMockActivity(subject, theme, type, count, level, gradeLevel);
+  }
+
   const gradeRules = getGradeGuidelines(gradeLevel);
-
-  const systemInstruction = `Você é uma professora criativa do Ensino Fundamental.
-  Crie uma folha de atividades para imprimir para alunos do ${gradeLevel}.
-  
-  DIRETRIZES OBRIGATÓRIAS DE NÍVEL (${gradeLevel}):
+  const prompt = `Crie Atividade Escolar JSON para ${gradeLevel}.
+  Tema: ${theme}. Tipo: ${type}. Qtd: ${count}.
   ${gradeRules}
-
-  Use o Google Search para garantir que fatos (científicos, geográficos, históricos) sejam verdadeiros e interessantes.`;
-
-  const prompt = `Crie uma atividade escolar em JSON.
-  Ano da Turma: ${gradeLevel}
-  Disciplina: ${subject}
-  Tema: ${theme}
-  Tipo de Atividade: ${type}
-  Quantidade de questões: ${count}
-  Dificuldade: ${level}
-
-  Instruções por tipo:
-  - Complete: Frases com lacunas. Para 2º ano use frases curtas. Para 4º ano, parágrafos.
-  - Ligue: Pares de conceitos.
-  - MultiplaEscolha: Pergunta + 3 alternativas (a, b, c).
-  - VerdadeiroFalso: Frases com ( ) para V ou F.
-  - Probleminhas: Histórias matemáticas. No 2º ano: passo único. No 4º ano: múltiplos passos.
-  - AtividadeAvaliativa: Mistura de questões para sondagem.
-
-  Gere questões variadas e criativas, respeitando rigorosamente o nível cognitivo do ${gradeLevel}.`;
+  Retorne APENAS JSON válido.`;
 
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-3-flash-preview',
       contents: prompt,
       config: {
-        systemInstruction,
+        systemInstruction: "Você é uma professora criativa.",
         tools: [{ googleSearch: {} }],
         responseMimeType: "application/json",
         responseSchema: {
@@ -183,25 +240,21 @@ export const generateActivity = async (
               items: {
                 type: Type.OBJECT,
                 properties: {
-                  instruction: { type: Type.STRING, description: "Enunciado da questão." },
-                  content: { type: Type.STRING, description: "O conteúdo da questão. Use \\n para quebras de linha." },
-                  answer: { type: Type.STRING, description: "Gabarito para o professor." }
-                },
-                required: ["instruction", "content", "answer"]
+                  instruction: { type: Type.STRING },
+                  content: { type: Type.STRING },
+                  answer: { type: Type.STRING }
+                }
               }
             }
-          },
-          required: ["questions"]
+          }
         }
       }
     });
 
     const data = JSON.parse(response.text || "{}");
+    const questions = (data.questions || []).map((q: any) => ({ ...q, id: generateId() }));
 
-    const questions = (data.questions || []).map((q: any) => ({
-      ...q,
-      id: generateId()
-    }));
+    if (questions.length === 0) throw new Error("Nenhuma questão gerada");
 
     return {
       id: generateId(),
@@ -217,17 +270,7 @@ export const generateActivity = async (
     };
 
   } catch (error) {
-    console.error("Erro ao gerar atividade:", error);
-    return {
-      id: generateId(),
-      createdAt: Date.now(),
-      subject,
-      theme,
-      type,
-      level,
-      gradeLevel,
-      schoolHeader: { studentName: true, date: true, teacherName: true },
-      questions: [{ id: generateId(), instruction: "Erro", content: "Não foi possível gerar a atividade no momento.", answer: "" }]
-    };
+    console.error("Falha na geração via IA:", error);
+    return getMockActivity(subject, theme, type, count, level, gradeLevel);
   }
 };
