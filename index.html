@@ -17,19 +17,19 @@
 
     <title>EduBrinca</title>
     
-    <!-- Tailwind via CDN -->
+    <!-- Tailwind via CDN (Mantido para facilitar o CSS sem configuração extra) -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
       tailwind.config = {
         theme: {
           extend: {
             screens: {
-              'xs': '375px', // Breakpoint extra para celulares muito pequenos
+              'xs': '375px',
             },
             colors: {
               paper: '#FFFDF7',
               pencil: '#3F3D56',
-              lines: '#CBD5E1', // Cinza azulado suave para linhas
+              lines: '#CBD5E1',
               brand: {
                 orange: '#FF8E72',
                 yellow: '#FFD966',
@@ -40,8 +40,8 @@
               }
             },
             fontFamily: {
-              sans: ['Nunito', 'sans-serif'], // Texto corrido legível e redondo
-              display: ['Fredoka', 'cursive'], // Títulos fofos
+              sans: ['Nunito', 'sans-serif'],
+              display: ['Fredoka', 'cursive'],
             },
             boxShadow: {
               'neopop': '4px 4px 0px 0px rgba(63, 61, 86, 0.1)',
@@ -52,19 +52,24 @@
         }
       }
     </script>
-    <!-- Importando Fredoka (Títulos) e Nunito (Corpo) -->
+    
+    <!-- Fontes -->
     <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Biblioteca de PDF externa -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
     <style>
       /* Reset Global */
       *, *::before, *::after {
         box-sizing: border-box;
-        -webkit-tap-highlight-color: transparent; /* Remove highlight azul no toque mobile */
+        -webkit-tap-highlight-color: transparent;
       }
 
       html, body {
-        overflow-x: hidden; /* Previne rolagem horizontal indesejada no app */
+        overflow-x: hidden;
         width: 100%;
+        height: 100%;
       }
 
       body {
@@ -84,116 +89,27 @@
         font-family: 'Fredoka', cursive;
       }
       
-      /* Scrollbar suave para containers internos */
       .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
       .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
       .custom-scrollbar::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 20px; }
 
-      /* --- REGRAS GERAIS DE IMPRESSÃO --- */
+      /* CSS DE IMPRESSÃO */
       @media print {
-        @page {
-          size: A4 portrait;
-          margin: 0;
-        }
-
-        body {
-          background: white !important;
-          background-image: none !important;
-          -webkit-print-color-adjust: exact !important;
-          print-color-adjust: exact !important;
-          color: #1a1a1a !important;
-          height: auto !important;
-          overflow: visible !important;
-        }
-
-        .no-print, header, button, .shadow-neopop, .shadow-sheet, footer, .pwa-install-btn {
-          display: none !important;
-        }
-
-        #root, main, .page-layout {
-          width: 100% !important;
-          margin: 0 !important;
-          padding: 0 !important;
-          max-width: none !important;
-          display: block !important;
-        }
-
-        /* Área de Impressão Global */
-        .print-area {
-          display: block !important;
-          width: 210mm !important; /* Largura exata A4 */
-          max-width: 210mm !important;
-          background: white !important;
-          box-shadow: none !important;
-          border: none !important;
-          border-radius: 0 !important;
-          margin: 0 auto !important;
-          box-sizing: border-box !important;
-          transform: none !important; /* Remove qualquer escala visual do mobile */
-        }
+        @page { size: A4 portrait; margin: 0; }
+        body { background: white !important; background-image: none !important; color: #1a1a1a !important; height: auto !important; overflow: visible !important; }
+        .no-print, header, button, .shadow-neopop, .shadow-sheet, footer, .pwa-install-btn { display: none !important; }
+        #root, main, .page-layout { width: 100% !important; margin: 0 !important; padding: 0 !important; max-width: none !important; display: block !important; }
+        .print-area { display: block !important; width: 210mm !important; max-width: 210mm !important; background: white !important; box-shadow: none !important; border: none !important; margin: 0 auto !important; transform: none !important; }
+        .avoid-break { page-break-inside: avoid !important; break-inside: avoid !important; }
         
-        .avoid-break { 
-          page-break-inside: avoid !important; 
-          break-inside: avoid !important;
-        }
-
-        /* --- MODO MULTI-PÁGINA (Aulas/Planejamentos) --- */
-        body.print-multipage .print-area {
-          padding: 1.5cm !important;
-          font-size: 12pt !important;
-        }
-        
+        body.print-multipage .print-area { padding: 1.5cm !important; font-size: 12pt !important; }
         body.print-multipage h1 { font-size: 24pt !important; }
-        body.print-multipage h2 { font-size: 20pt !important; }
-        body.print-multipage p, body.print-multipage li { 
-          line-height: 1.6 !important; 
-        }
+        body.print-multipage p, body.print-multipage li { line-height: 1.6 !important; }
 
-        /* --- MODO 1 FOLHA (Exercícios/Avaliações) --- */
-        body.print-onepage .print-area {
-          padding: 1cm !important;
-          min-height: 297mm !important; /* Altura A4 */
-          height: auto !important;
-          font-size: 11pt !important;
-        }
-
-        body.print-onepage .school-header {
-          margin-bottom: 0.5cm !important;
-          padding: 0.4cm !important;
-          border-width: 1px !important;
-        }
-        
-        body.print-onepage .activity-title {
-          font-size: 22pt !important;
-          margin-bottom: 0.2cm !important;
-        }
-        
-        body.print-onepage .activity-meta {
-          margin-bottom: 0.5cm !important;
-          font-size: 9pt !important;
-        }
-
-        body.print-onepage .question-container {
-          margin-bottom: 0.6cm !important;
-        }
-        
-        body.print-onepage .question-text {
-          font-size: 11pt !important;
-          margin-bottom: 0.3cm !important;
-        }
-
-        body.print-onepage .drawing-box {
-          height: 4cm !important;
-          margin-top: 0.3cm !important;
-        }
-        
-        body.print-onepage .writing-line {
-          height: 0.8cm !important;
-        }
-        
-        body.print-onepage .footer-message {
-          padding-top: 0.5cm !important;
-        }
+        body.print-onepage .print-area { padding: 1cm !important; min-height: 297mm !important; height: auto !important; font-size: 11pt !important; }
+        body.print-onepage .school-header { margin-bottom: 0.5cm !important; padding: 0.4cm !important; border-width: 1px !important; }
+        body.print-onepage .activity-title { font-size: 22pt !important; margin-bottom: 0.2cm !important; }
+        body.print-onepage .drawing-box { height: 4cm !important; }
       }
     </style>
   <script type="importmap">
@@ -210,7 +126,8 @@
 </script>
 </head>
   <body>
-    <div id="root" allowfullscreen></div>
+    <div id="root"></div>
+    <!-- Ponto de entrada do Vite -->
     <script type="module" src="/index.tsx"></script>
   </body>
 </html>
