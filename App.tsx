@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { SpeedInsights } from '@vercel/speed-insights/react';
 import { Home } from './views/Home';
 import { Planner } from './views/Planner';
 import { ActivityCreator } from './views/ActivityCreator';
@@ -30,6 +31,7 @@ const App: React.FC = () => {
       <footer className="fixed bottom-0 left-0 w-full text-center py-2 bg-white/60 backdrop-blur-sm border-t border-slate-100 text-slate-400 text-[10px] font-bold uppercase tracking-widest z-50 print:hidden select-none">
         Projeto educacional em desenvolvimento • Leonardo Assunção
       </footer>
+      <SpeedInsights />
     </div>
   );
 };
